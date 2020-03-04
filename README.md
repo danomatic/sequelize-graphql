@@ -1,5 +1,5 @@
 # Sequelize GraphQL
-This is a simple set of helper functions that will recursively travers a GraphQL query and create the optimal Sequelize `findAll` options for `include`, `where`, `attributes`, `limit`, and `orderBy`. A complex GraphQL query can often be resolved with a single SQL query, maximizing performance.
+This is a simple set of helper functions that will recursively traverse a GraphQL query and create the optimal Sequelize `findAll` options for `include`, `where`, `attributes`, `limit`, and `orderBy`. A complex GraphQL query can often be resolved with a single SQL query, maximizing performance.
 
 ## See Also
 * Sequelize Query Docs: https://sequelize.org/v5/manual/querying.html
