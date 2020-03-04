@@ -1,0 +1,27 @@
+{
+  "name": "sequelize-graphql",
+  "version": "1.0.0",
+  "description": "Resolve GraphQL queries with a single SQL query",
+  "main": "index.js",
+  "scripts": {},
+  "keywords": [
+    "Sequelize",
+    "GraphQL",
+    "SQL",
+    "DataLoader"
+  ],
+  "author": "Dan Blaisdell",
+  "license": "ISC",
+  "dependencies": {},
+  "devDependencies": {
+    "apollo-server": "^2.9.16",
+    "graphql": "^14.5.8",
+    "graphql-type-json": "^0.3.1",
+    "mysql2": "^2.1.0",
+    "sequelize": "^5.21.3",
+    "nodemon": "^2.0.2",
+    "sequelize-cli": "^5.5.1",
+    "ts-node": "^8.6.2",
+    "typescript": "^3.7.4"
+  }
+}
