@@ -37,7 +37,9 @@ export type SQLQueryArgs = {
 export const getSequelizeQuery = (args: SQLQueryArgs, info: GraphQLResolveInfo, parentModel: typeof Model): FindOptions => {
 
     const fields = getSelectedFields(info);
-    const attributes = getRootFieldNames(info);
+    const attributes = getRootFieldNames(info).filter((fieldName): boolean => {
+        return fieldName in parentModel.rawAttributes;
+    });
     const include: Includeable[] = getIncludes(fields, info, parentModel);
 
     return {
@@ -140,7 +142,8 @@ export const getSelectedFields = (info: GraphQLResolveInfo): FieldNode[] => {
         return [];
     }
 
-    return resolveFragments(info.fieldNodes[0].selectionSet.selections.slice(), info) as FieldNode[];
+    const fields = resolveFragments(info.fieldNodes[0].selectionSet.selections.slice(), info) as FieldNode[];
+    return fields.filter((field) => field.name.value !== "__typename");
 };
 
 const getFieldNames = (fields: ReadonlyArray<FieldNode>) => fields.map((fieldSelection: FieldNode) => fieldSelection.name.value);
