@@ -3,9 +3,10 @@ import {
     GraphQLResolveInfo,
     valueFromASTUntyped
 } from "graphql";
-import {FindOptions, Includeable, Model, OrderItem} from "sequelize";
-import {SelectionNode} from "graphql/language/ast";
-import {WhereAttributeHash, WhereOptions} from "sequelize/types/lib/model";
+import { FindOptions, Model, OrderItem } from "sequelize";
+import { SelectionNode } from "graphql/language/ast";
+import { IncludeOptions, WhereAttributeHash } from "sequelize/types/lib/model";
+import { Association } from "sequelize/types/lib/associations";
 
 export type SQLOrder = {
     col: string,
@@ -34,24 +35,86 @@ export type SQLQueryArgs = {
     offset?: number;
 }
 
-export const getSequelizeQuery = (args: SQLQueryArgs, info: GraphQLResolveInfo, parentModel: typeof Model): FindOptions => {
+export const getSequelizeQuery = (args: SQLQueryArgs, info: GraphQLResolveInfo, model: typeof Model): FindOptions => {
 
     const fields = getSelectedFields(info);
     const attributes = getRootFieldNames(info).filter((fieldName): boolean => {
-        return fieldName in parentModel.rawAttributes;
+        return fieldName in model.rawAttributes;
     });
-    const include: Includeable[] = getIncludes(fields, info, parentModel);
+    const include: IncludeOptions[] = getIncludes(fields, info, model);
+    applyWhereIncludes(args.where || {}, include, model);
 
     return {
         where: args.where || undefined,
         include,
         attributes,
         limit: args.limit || 100,
-        order: args.orderBy ? args.orderBy.map((order) => {
-            return [order.col, order.dir];
-        }) : []
+        order: args.orderBy ? getOrder(args.orderBy, include, model) : []
     };
 };
+
+const traverseKeys = (obj: { [ key: string ]: any }) => {
+    const keys: { [ key: string ]: boolean } = {};
+    Object.keys(obj).forEach(key => {
+        keys[key] = true;
+        if (typeof obj[key] === 'object') {
+            Object.assign(keys, traverseKeys(obj[key]))
+        }
+    })
+    return keys;
+};
+
+const getAllKeys = (obj: { [ key: string ]: any }) => Object.keys(traverseKeys(obj));
+
+export const applyWhereIncludes = (where: WhereAttributeHash, includes: IncludeOptions[], model: typeof Model) => {
+    const joinColumns = getAllKeys(where).filter(key => key.startsWith('$') && key.endsWith('$') && key.includes('.'));
+    joinColumns.forEach(column => applyIncludes(column, includes, model));
+};
+
+export const applyIncludes = (column: string, includes: IncludeOptions[], model: typeof Model, callback?: (assoc: Association) => void) => {
+    const parts = column.replace(/\$/g, '').split('.');
+    parts.pop();
+    let currentModel: typeof Model = model;
+    let currentIncludes: IncludeOptions[] = includes;
+    let foreignField: string | undefined;
+    while (foreignField = parts.shift()) {
+        const assoc = currentModel.associations[foreignField];
+        if (!assoc) {
+            throw new Error(`No association found for ${currentModel.name}.${foreignField}`);
+        }
+        currentModel = assoc.target;
+        if (callback) {
+            callback(assoc);
+        }
+        let include = currentIncludes.find(include => {
+            return include.model === currentModel && include.as === foreignField
+        });
+        if (!include) {
+            include = {
+                model: currentModel,
+                as: foreignField,
+                attributes: currentModel.primaryKeyAttributes,
+                include: []
+            };
+            currentIncludes.push(include);
+        }
+        currentIncludes = include.include as IncludeOptions[];
+    }
+};
+
+export const getOrder = (orderBys: SQLOrder[], includes: IncludeOptions[], model: typeof Model) => {
+    return orderBys.map((order) => {
+        if (order.col.includes(".")) {
+            const parts = order.col.split('.');
+            const col = parts.pop() as string;
+            const orderBy: any[] = [];
+            applyIncludes(order.col, includes, model, (assoc) => orderBy.push(assoc));
+            orderBy.push(col, order.dir);
+            return orderBy as any;
+        }
+        return [order.col, order.dir];
+    });
+}
 
 export const resolveFragments = (selections: SelectionNode[], info: GraphQLResolveInfo): FieldNode[] => {
     const fragments = info.fragments;
@@ -66,10 +129,10 @@ export const resolveFragments = (selections: SelectionNode[], info: GraphQLResol
     return selections as FieldNode[];
 };
 
-export const getIncludes = (fields: ReadonlyArray<FieldNode>, info: GraphQLResolveInfo, parentModel: typeof Model): Includeable[] => {
+export const getIncludes = (fields: ReadonlyArray<FieldNode>, info: GraphQLResolveInfo, parentModel: typeof Model): IncludeOptions[] => {
     const nestedFields = fields.filter((field) => field.name.value in parentModel.associations);
 
-    return nestedFields.map((field: FieldNode): Includeable => {
+    return nestedFields.map((field: FieldNode): IncludeOptions => {
         const variables = info.variableValues;
         const selections = field.selectionSet ? resolveFragments(field.selectionSet.selections.slice(), info) : [];
 
@@ -90,7 +153,7 @@ export const getIncludes = (fields: ReadonlyArray<FieldNode>, info: GraphQLResol
         }
 
         let required = false;
-        let where: WhereOptions | undefined;
+        let where: WhereAttributeHash | undefined;
         let limit: number | undefined;
         let separate: boolean = false;
         let order: OrderItem[] | undefined;
@@ -123,6 +186,10 @@ export const getIncludes = (fields: ReadonlyArray<FieldNode>, info: GraphQLResol
             }
         }
 
+        const includes = getIncludes(selections as ReadonlyArray<FieldNode>, info, model);
+
+        applyWhereIncludes(where || {}, includes, model);
+
         return {
             model,
             where,
@@ -132,7 +199,7 @@ export const getIncludes = (fields: ReadonlyArray<FieldNode>, info: GraphQLResol
             as,
             attributes: selections.length > 0 ? attributes : undefined,
             required,
-            include: getIncludes(selections as ReadonlyArray<FieldNode>, info, model)
+            include: includes
         };
     });
 };
